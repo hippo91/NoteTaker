@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-A simple notetaker program
+This module implements the Note and NoteTaker classes
 """
 import datetime
 import os
 import re
-import sys
-from typing import List, Union
+from typing import List, Union, Dict, cast, NewType
 from ruamel.yaml import YAML, yaml_object, SafeConstructor
 
 
 YAML_INST = YAML()
+NoteId = NewType('NoteId', int)
+NoteLabel = NewType('NoteLabel', str)
 
 
 @yaml_object(YAML_INST)
@@ -40,7 +41,7 @@ class Note:
     note_pattern = re.compile(r'(@.*)\s\[(.*)\]\s:\s(.*)')
     date_format = "%y/%m/%d %H:%M:%S"
 
-    def __init__(self, message: str, labels: List[str], date: datetime.date):
+    def __init__(self, message: str, labels: List[NoteLabel], date: datetime.date):
         """
         Constructor
 
@@ -88,31 +89,41 @@ class NoteTaker:
     >>> import datetime
     >>> from ruamel.yaml import YAML
     >>> import sys
+
+    Create a new NoteTaker instance and add few notes
     >>> THE_NOTE_TAKER = NoteTaker()
     >>> THE_NOTE_TAKER.add_note("My first note")
     >>> THE_NOTE_TAKER.add_note("Call John", "todo", "perso")
     >>> THE_NOTE_TAKER.add_note("Solve bug 42", "tOdO", "job")
+
+    Print the actual state of the NoteTaker instance
     >>> print(THE_NOTE_TAKER)
     0 -> @undefined [...] : My first note
     1 -> @todo, @perso [...] : Call John
     2 -> @todo, @job [...] : Solve bug 42
     <BLANKLINE>
+
+    Also it is possible to dump the NoteTaker instance into a yaml stream
     >>> YAML().dump(THE_NOTE_TAKER, sys.stdout)
     !notetaker
     0: !note '@undefined [...] : My first note'
     1: !note '@todo, @perso [...] : Call John'
     2: !note '@todo, @job [...] : Solve bug 42'
+
+    A note to delete?
     >>> THE_NOTE_TAKER.delete_note(1)
     >>> print(THE_NOTE_TAKER)
     0 -> @undefined [...] : My first note
     2 -> @todo, @job [...] : Solve bug 42
     <BLANKLINE>
-    >>> new_note_str = """!notetaker
-    ... 0: !note @todo, @job, @urgent [18/12/22 12:36:11] : Solve bug 122
-    ... 1: !note @job, @urgent [18/12/26 12:36:11] : Solve bug 123
-    ... 2: !note @todo, @urgent [18/12/24 12:36:11] : Solve bug 108
-    ... 3: !note @todo [18/12/24 12:36:11] : Solve bug 109
-    ... 5: !note @todo, @job, @urgent [18/12/31 12:36:11] : Solve bug 121"""
+
+    Of course a NoteTaker instance can be loaded from a yaml stream
+    >>> new_note_str = \"\"\"!notetaker
+    ... 0: !note '@todo, @job, @urgent [18/12/22 12:36:11] : Solve bug 122'
+    ... 1: !note '@job, @urgent [18/12/26 12:36:11] : Solve bug 123'
+    ... 2: !note '@todo, @urgent [18/12/24 12:36:11] : Solve bug 108'
+    ... 3: !note '@todo [18/12/24 12:36:11] : Solve bug 109'
+    ... 5: !note '@todo, @job, @urgent [18/12/31 12:36:11] : Solve bug 121'\"\"\"
     >>> NEW_NOTE_TAKER = YAML().load(new_note_str)
     >>> NEW_NOTE_TAKER.add_note("Buenos dias amigo!", "perso", "urgent")
     >>> NEW_NOTE_TAKER.delete_note(3)
@@ -121,18 +132,31 @@ class NoteTaker:
     1 -> @job, @urgent [18/12/26 12:36:11] : Solve bug 123
     2 -> @todo, @urgent [18/12/24 12:36:11] : Solve bug 108
     5 -> @todo, @job, @urgent [18/12/31 12:36:11] : Solve bug 121
-    6 -> @todo, @perso, @urgent [...] : Buenos dias amigo!
+    6 -> @perso, @urgent [...] : Buenos dias amigo!
+    <BLANKLINE>
+
+    How to look for a specific note from its label?
+    >>> todos = NEW_NOTE_TAKER.find_note('todo')
+    >>> print("\\n".join(f"{k} : {str(v)}" for k,v in todos.items()))
+    0 : @todo, @job, @urgent [18/12/22 12:36:11] : Solve bug 122
+    2 : @todo, @urgent [18/12/24 12:36:11] : Solve bug 108
+    5 : @todo, @job, @urgent [18/12/31 12:36:11] : Solve bug 121
+
+    Or if the note's id is already known
+    >>> by_id = NEW_NOTE_TAKER.find_note(5)
+    >>> print("\\n".join(f"{k} : {str(v)}" for k,v in by_id.items()))
+    5 : @todo, @job, @urgent [18/12/31 12:36:11] : Solve bug 121
     """
     yaml_tag = u"!notetaker"
 
     def __init__(self):
-        self.current_id = 0
+        self.current_id = NoteId(0)
         # The main map associating an id with a Note object
-        self.notes = {}
+        self.notes: Dict[NoteId, Note] = {}
         # A secondary map that associates a label to the corresponding notes id
-        self.label_id_map = {}
+        self.label_id_map: Dict[NoteLabel, List[NoteId]] = {}
 
-    def add_note(self, message: str, *labels: str):
+    def add_note(self, message: str, *labels: NoteLabel):
         """
         Add a note to the collection
 
@@ -141,9 +165,9 @@ class NoteTaker:
         """
         current_date = datetime.datetime.now()
         if not labels:
-            note_labels = ["undefined",]
+            note_labels = [NoteLabel("undefined")]
         else:
-            note_labels = [lab.lower() for lab in labels]
+            note_labels = [NoteLabel(lab.lower()) for lab in labels]
 
         new_note = Note(message, note_labels, current_date)
         self.notes[self.current_id] = new_note
@@ -152,7 +176,7 @@ class NoteTaker:
             self.label_id_map.setdefault(lab, []).append(self.current_id)
         self.current_id += 1
 
-    def delete_note(self, note_id: int):
+    def delete_note(self, note_id: NoteId):
         """
         Delete a note
 
@@ -163,21 +187,31 @@ class NoteTaker:
         for lab in note.labels:
             self.label_id_map[lab].remove(note_id)
 
-    def find_note(self, field: Union[int, str]) -> List[Note]:
+    def find_note_id(self, label: NoteLabel) -> List[NoteId]:
         """
-        Find a note by its id or by a label
+        Find a note by a label. Returns a list of notes id
+
+        :param label: note's label
+        :return: a list of matching notes ids
+        """
+        return [note_id for note_id in self.label_id_map[label] if note_id in self.notes]
+
+    def find_note(self, field: Union[NoteId, NoteLabel]) -> Dict[NoteId, Note]:
+        """
+        Find a note by its id or by a label. Returns a list of note objects
 
         :param field: note's id or label
+        :return: a list of matching notes
         """
-        res = []
+        res: Dict[NoteId, Note] = {}
+        note_id = cast(NoteId, field)
+        if note_id in self.notes:
+            res.update({note_id: self.notes[note_id]})
         try:
-            res.append(self.notes[field])
+            label = cast(NoteLabel, field)
+            res.update({n_id:self.notes[n_id] for n_id in self.find_note_id(label)})
         except KeyError:
-            pass
-        try:
-            for note_id in self.label_id_map[field]:
-                res.append(self.notes[note_id])
-        except KeyError:
+            # In case field is a note_id (int) there is not key of such type in self.label_id_map
             pass
         return res
 
@@ -217,18 +251,3 @@ class NoteTaker:
 if __name__ == "__main__":
     import doctest
     doctest.testmod(optionflags=doctest.ELLIPSIS)
-    YAML_INST.dump(THE_NOTE_TAKER, sys.stdout)
-    print(THE_NOTE_TAKER)
-    print(", ".join(str(x) for x in THE_NOTE_TAKER.find_note("todo")))
-    print(", ".join(str(x) for x in THE_NOTE_TAKER.find_note("jira")))
-    print(", ".join(str(x) for x in THE_NOTE_TAKER.find_note(0)))
-    print(", ".join(str(x) for x in THE_NOTE_TAKER.find_note("prout")))
-    NEW_NOTE_TAKER = YAML_INST.load('!notetaker\n'
-                               '0: !note "@todo, @jira, @hope [18/12/22 12:36:11] : Resoudre bug JIRA 122"\n'
-                               '1: !note "@jira, @hope [18/12/26 12:36:11] : Resoudre bug JIRA 123"\n'
-                               '2: !note "@todo, @hope [18/12/24 12:36:11] : Resoudre bug JIRA 108"\n'
-                               '3: !note "@todo [18/12/24 12:36:11] : Resoudre bug JIRA 109"\n'
-                               '5: !note "@todo, @jira, @hope [18/12/31 12:36:11] : Resoudre bug JIRA 121"')
-    NEW_NOTE_TAKER.add_note("Buenos dias amigo!", "delire", "hope")
-    NEW_NOTE_TAKER.delete_note(3)
-    print(NEW_NOTE_TAKER)
