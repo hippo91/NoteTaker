@@ -5,6 +5,7 @@ This module implements the Note and NoteTaker classes
 import datetime
 import os
 import re
+from pathlib import Path
 from typing import List, Union, Dict, cast, NewType
 from ruamel.yaml import YAML, yaml_object, SafeConstructor
 
@@ -246,6 +247,28 @@ class NoteTaker:
         for note_id, note in new_dict.items():
             for lab in note.labels:
                 new_obj.label_id_map.setdefault(lab, []).append(note_id)
+
+
+def load_notes(filepath: Path) -> NoteTaker:
+    """
+    Load the file under filepath and return the corresponding NoteTaker
+
+    :param filepath: path to the notetaker yaml file
+    :return: the notetaker instance
+    """
+    if not filepath.exists():
+        return NoteTaker()
+    return YAML_INST.load(filepath)
+
+
+def save_notes(notes: NoteTaker, filepath: Path):
+    """
+    Save the NoteTaker instance into the yaml file pointed by filepath
+
+    :param filepath: path to the notetaker yaml file
+    """
+    with filepath.open(mode='w') as fo:
+        YAML_INST.dump(notes, fo)
 
 
 if __name__ == "__main__":
