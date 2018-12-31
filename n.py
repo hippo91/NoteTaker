@@ -8,7 +8,7 @@ import click
 from notetaker import load_notes, save_notes
 
 
-PATH_TO_YAML = '/tmp/notes.yaml'
+PATH_TO_DB = Path( '~/.notes.yaml').expanduser().resolve()
 
 
 @click.command()
@@ -17,14 +17,14 @@ PATH_TO_YAML = '/tmp/notes.yaml'
 @click.option('-s', '--search', 'search', help="Search a note by its id or one of its label")
 def launch(note=None, delete=None, search=None):
     """ n is as simpe notetaker for the command line. """
-    notetaker = load_notes(Path(PATH_TO_YAML))
+    notetaker = load_notes(PATH_TO_DB)
 
     if note is None:
         if delete is None and search is None:
             print(notetaker)
         elif delete is not None:
             notetaker.delete_note(delete)
-            save_notes(notetaker, Path('/tmp/notes.yaml'))
+            save_notes(notetaker, PATH_TO_DB)
             print("Note deleted")
         elif search is not None:
             try:
@@ -41,7 +41,7 @@ def launch(note=None, delete=None, search=None):
             message = note
             labels = []
         notetaker.add_note(message.strip(), *labels)
-        save_notes(notetaker, Path(PATH_TO_YAML))
+        save_notes(notetaker, PATH_TO_DB)
         print("Note added")
 
 
